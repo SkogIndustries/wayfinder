@@ -103,6 +103,7 @@ table.t th{background:var(--gold-soft);font-weight:650}
 .actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .act{background:none;border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:12.5px;cursor:pointer;color:var(--ink-2)}
 .act:hover{border-color:var(--gold);color:var(--ink)}
+.abbr{font-size:12.5px;color:var(--ink-3);margin:2px 0 8px}
 .disclaimer{font-size:12px;color:var(--ink-3);margin-top:10px}
 form#ask{border-top:1px solid var(--line);background:var(--panel);padding:12px 18px calc(12px + env(safe-area-inset-bottom))}
 .askrow{max-width:860px;margin:0 auto;display:flex;gap:10px}
@@ -408,22 +409,118 @@ function answer({ title, lead, tags = [], court, sections = [], openCount = 99, 
   const secHtml = sections.filter(Boolean).map((s, i) => `<details class="sec" ${i < openCount ? 'open' : ''}><summary>${esc(stripRegionPrefix(s.title))}</summary><div class="secbody">${renderBlocks(s.blocks)}</div></details>`).join('');
   const plainText = [title, lead ? plain(lead) : '', court ? court.name + '\n' + court.contacts.map(([k, v]) => `${k}: ${v}`).join('\n') + (court.motionsDay ? `\nCivil motions day: ${court.motionsDay}` : '') : '',
     ...sections.filter(Boolean).map(s => `\n${stripRegionPrefix(s.title).toUpperCase()}\n${blocksText(s.blocks)}`), text ? plain(text) : ''].filter(Boolean).join('\n');
-  const html = `<div class="card">${title ? `<h3 class="title">${esc(title)}</h3>` : ''}${tags.length ? `<div class="meta">${tags.map((t, i) => `<span class="tag ${i === 0 ? 'gold' : ''}">${esc(t)}</span>`).join('')}</div>` : ''}${lead ? `<p class="lead">${md(lead)}</p>` : ''}${courtCard(court)}${text ? `<p>${md(text)}</p>` : ''}${extraHtml}${secHtml}
+  const html = `<div class="card">${title ? `<h3 class="title">${esc(title)}</h3>` : ''}${tags.length ? `<div class="meta">${tags.map((t, i) => `<span class="tag ${i === 0 ? 'gold' : ''}">${esc(t)}</span>`).join('')}</div>` : ''}${lastAbbr.length ? `<p class="abbr">Reading ${lastAbbr.map(([a, f]) => `<b>${esc(a.toUpperCase())}</b> as ${esc(f)}`).join(', ')}.</p>` : ''}${lead ? `<p class="lead">${md(lead)}</p>` : ''}${courtCard(court)}${text ? `<p>${md(text)}</p>` : ''}${extraHtml}${secHtml}
     ${sections.length ? `<div class="actions"><button class="act" data-copy>Copy as text</button><button class="act" data-print>Print</button></div>` : ''}
     ${chips.length ? `<div class="chips">${chips.map((c, i) => `<button class="chip ${i === 0 ? 'primary' : ''}" data-q="${esc(c[1] || c[0])}">${esc(c[0])}</button>`).join('')}</div>` : ''}
     ${sections.length ? `<div class="disclaimer">From Wayfinder (current to November 2026). Verify against the <a href="${ctx.region ? REGIONS[ctx.region].pd : 'https://www.ontariocourts.ca/scj/filing-procedures/regional/'}" target="_blank" rel="noopener">current Practice Direction</a> before relying on it.</div>` : ''}</div>`;
+  lastAbbr = [];
   addBot(html, plainText);
 }
 const where = () => ctx.court ? ctx.court.name.replace(/ \(.*/, '') : (ctx.region ? REGIONS[ctx.region].short : '');
 const placeChips = () => [['Toronto'], ['Brampton'], ['Newmarket'], ['Kitchener'], ['Hamilton'], ['Ottawa'], ['London'], ['Sudbury'], ['Show all courthouses', 'list all courthouses']];
 
+// ---- acronyms & shorthand: [pattern, text the parser reads, plain-English meaning, group] ----
+const ABBR = [
+  ['cpc', 'civil practice court', 'Civil Practice Court', 'Courts & hearings'],
+  ['tbst', 'to be spoken to court trial scheduling', 'To Be Spoken To (Toronto trial scheduling court)', 'Courts & hearings'],
+  ['ptc', 'pre-trial conference', 'Pre-Trial Conference', 'Courts & hearings'],
+  ['tmc', 'trial management conference pre-trial', 'Trial Management Conference', 'Courts & hearings'],
+  ['cmc', 'case conference', 'Case Management Conference', 'Courts & hearings'],
+  ['case conf', 'case conference', 'Case Conference', 'Courts & hearings'],
+  ['msj', 'summary judgment motion', 'Motion for Summary Judgment', 'Courts & hearings'],
+  ['sj', 'summary judgment motion', 'Summary Judgment', 'Courts & hearings'],
+  ['lm', 'long motion', 'Long Motion', 'Courts & hearings'],
+  ['sm', 'short motion', 'Short Motion', 'Courts & hearings'],
+  ['mtn', 'motion', 'Motion', 'Courts & hearings'],
+  ['appln|appl\'n|app\'n', 'application', 'Application', 'Courts & hearings'],
+  ['adj|adjmt|adjm\'t', 'adjourn', 'Adjournment', 'Courts & hearings'],
+  ['w/o notice|wo notice', 'without notice', 'Without Notice (ex parte)', 'Courts & hearings'],
+  ['comm list|comml list|cl', 'commercial list', 'Commercial List', 'Courts & hearings'],
+  ['div ct|divct', 'divisional court', 'Divisional Court', 'Courts & hearings'],
+  ['aj', 'associate judge', 'Associate Judge (formerly Master)', 'People & offices'],
+  ['rsj', 'regional senior judge', 'Regional Senior Judge', 'People & offices'],
+  ['tc', 'trial coordinator', 'Trial Coordinator', 'People & offices'],
+  ['tco', 'trial coordinator office', 'Trial Coordination Office', 'People & offices'],
+  ['scj|oscj|onsc', 'superior court', 'Superior Court of Justice', 'People & offices'],
+  ['ocpp', 'ocpp ontario courts public portal', 'Ontario Courts Public Portal (Toronto)', 'Filing & documents'],
+  ['jso', 'jso justice services online portal', 'Justice Services Online', 'Filing & documents'],
+  ['cso', 'civil submissions online portal', 'Civil Submissions Online', 'Filing & documents'],
+  ['cco', 'civil claims online portal', 'Civil Claims Online', 'Filing & documents'],
+  ['nom', 'notice of motion', 'Notice of Motion (Form 37A)', 'Filing & documents'],
+  ['noa', 'notice of application', 'Notice of Application (Form 14E)', 'Filing & documents'],
+  ['aos', 'affidavit of service', 'Affidavit of Service', 'Filing & documents'],
+  ['soc', 'statement of claim', 'Statement of Claim', 'Filing & documents'],
+  ['sod', 'statement of defence', 'Statement of Defence', 'Filing & documents'],
+  ['37b|form 37b', 'confirm motion', 'Confirmation of Motion (Form 37B)', 'Filing & documents'],
+  ['38b|form 38b', 'confirm application', 'Confirmation of Application (Form 38B)', 'Filing & documents'],
+  ['50a|form 50a', 'form 50a pre-trial', 'Pre-trial request (Form 50A)', 'Filing & documents'],
+  ['57b|form 57b', 'costs outline', 'Costs Outline (Form 57B)', 'Filing & documents'],
+  ['tmp', 'trial management plan simplified procedure', 'Trial Management Plan (Rule 76)', 'Filing & documents'],
+  ['pd|cpd', 'practice direction', 'Practice Direction', 'Filing & documents'],
+  ['sp|r76|r\\. ?76', 'simplified procedure', 'Simplified Procedure (Rule 76)', 'Rules & topics'],
+  ['r48|r\\. ?48|rule 48', '48.14 administrative dismissal', 'Administrative Dismissal (r. 48.14)', 'Rules & topics'],
+  ['admin dismissal', 'administrative dismissal', 'Administrative Dismissal (r. 48.14)', 'Rules & topics'],
+  ['mm', 'mandatory mediation', 'Mandatory Mediation (r. 24.1)', 'Rules & topics'],
+  ['pos', 'power of sale mortgage', 'Power of Sale', 'Rules & topics'],
+  ['cpa', 'class proceeding', 'Class Proceedings Act, 1992', 'Rules & topics'],
+  ['bia', 'bia bankruptcy', 'Bankruptcy and Insolvency Act', 'Rules & topics'],
+  ['ccaa', 'ccaa commercial', 'Companies\' Creditors Arrangement Act', 'Rules & topics'],
+  ['cla', 'construction lien', 'Construction Act (liens)', 'Rules & topics'],
+  ['ce', 'central east', 'Central East Region', 'Regions & places'],
+  ['cw', 'central west', 'Central West Region', 'Regions & places'],
+  ['cs', 'central south', 'Central South Region', 'Regions & places'],
+  ['ne', 'northeast', 'Northeast Region', 'Regions & places'],
+  ['nw', 'northwest', 'Northwest Region', 'Regions & places'],
+  ['sw', 'southwest', 'Southwest Region', 'Regions & places'],
+  ['kw|k-w', 'kitchener', 'Kitchener-Waterloo', 'Regions & places'],
+  ['t-bay|tbay', 'thunder bay', 'Thunder Bay', 'Regions & places'],
+  ['ssm|the soo|soo', 'sault ste marie', 'Sault Ste. Marie', 'Regions & places'],
+  ['stc|st kitts', 'st catharines', 'St. Catharines', 'Regions & places'],
+  ['hamont', 'hamilton', 'Hamilton', 'Regions & places'],
+].map(([pat, read, full, group]) => ({ re: new RegExp('(^|[^a-z0-9.])(' + pat + ')(?=[^a-z0-9]|$)', 'i'), pat, read, full, group }));
+let lastAbbr = [];
+function expandAbbr(raw) {
+  let text = ' ' + raw + ' '; const used = [];
+  // "TO" for Toronto: only when typed in capitals, so the word "to" is left alone
+  if (/(^|[\s,(])TO(?=[\s,.?!)]|$)/.test(text)) { text = text.replace(/(^|[\s,(])TO(?=[\s,.?!)]|$)/g, '$1Toronto'); used.push(['TO', 'Toronto']); }
+  for (const a of ABBR) {
+    const m = text.match(a.re);
+    if (!m) continue;
+    // already spelled out? then nothing to do
+    if (m[2].toLowerCase() === a.read) continue;
+    text = text.replace(a.re, `$1${a.read}`);
+    if (!used.some(u => u[1] === a.full)) used.push([m[2], a.full]);
+  }
+  return { text: text.trim(), used };
+}
+function glossaryAnswer(raw) {
+  const m = raw.match(/what (?:does|is|'s)\s+(?:an?\s+|the\s+)?["']?([a-z0-9.\/'-]{2,8})["']?\s*(?:mean|stand for|short for)?\s*\??$/i)
+    || raw.match(/^\s*["']?([a-z0-9.\/'-]{2,8})["']?\s*\?\s*$/i) || raw.match(/(?:meaning of|define)\s+["']?([a-z0-9.\/'-]{2,8})/i);
+  const want = /acronym|abbreviation|glossary|shorthand/i.test(raw);
+  if (m) {
+    const hit = ABBR.find(a => a.re.test(' ' + m[1] + ' '));
+    if (hit) { answer({ title: `${m[1].toUpperCase()} = ${hit.full}`, text: `Wayfinder understands **${m[1].toUpperCase()}** anywhere in a question, e.g. "book a ${m[1].toUpperCase()} in Brampton".`, sections: [glossarySection()], openCount: 0 }); return true; }
+  }
+  if (want) { answer({ title: 'Acronyms & shorthand', lead: 'You can use any of these in a question. Wayfinder reads them as the full term.', sections: [glossarySection()] }); return true; }
+  return false;
+}
+function glossarySection() {
+  const groups = [...new Set(ABBR.map(a => a.group))];
+  const shown = new Set();
+  const blocks = groups.flatMap(g => [{ t: 'h3', text: g }, { t: 'table', headers: ['Shorthand', 'Meaning'],
+    rows: ABBR.filter(a => a.group === g && !shown.has(a.full) && shown.add(a.full)).map(a => [a.pat.replace(/\\\. \?/g, '. ').replace(/\\/g, '').split('|').map(x => x.toUpperCase()).join(' / '), a.full]) }]);
+  return { title: 'All acronyms Wayfinder understands', blocks };
+}
 function respond(raw) {
+  lastAbbr = [];
+  if (!claim && glossaryAnswer(raw)) return;
+  if (!claim) { const ex = expandAbbr(raw); raw = ex.text; lastAbbr = ex.used; }
   if (claim) {
     const looksNew = /\bmotion|application|confirm|adjourn|timeline|naming/i.test(raw) && !/defendant|address/i.test(raw) && claim.step !== 'property';
     if (!looksNew) return claimAnswer(raw);
     claim = null;
   }
-  if (CLAIM_RE.test(raw)) return startClaim(raw);
+  if (CLAIM_RE.test(raw) && !(/\b(motion|application|confirmation|factum|record|affidavit|notice of)\b/i.test(raw) && !/statement of claim|issue (a |the |my |our )?claim/i.test(raw))) return startClaim(raw);
   const wasDate = dateMode; dateMode = false;
   if (/deadline calc|date calc|calculat\w* (a |my |the )?deadline|deadline helper/i.test(raw) && !parseDate(raw)) {
     return answer({ title: 'Deadline calculator', lead: 'Give me the **hearing date** and the **courthouse or region**, and I\'ll work out the confirmation deadline and every service and filing deadline before it, skipping weekends and court holidays under rr. 1.03 and 3.01.',
@@ -1105,7 +1202,7 @@ document.getElementById('menuBtn').onclick = () => { const o = side.classList.to
 scrim.addEventListener('click', closeSide);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSide(); });
 // sidebar
-document.getElementById('quick').innerHTML = [['Deadline calculator', 'deadline calculator'], ['Emailing the court (format)', 'email the court subject line'], ['Presumptive modes (virtual/in person)', 'mode of appearance'], ['Transfers between counties', 'transfer'], ['Class actions', 'class action'], ['Commercial List', 'commercial list'], ['Where to issue a claim', 'where do I issue a statement of claim'], ['Rules timelines', 'rules timelines'], ['File naming protocol', 'file naming protocol'], ['How to file (portals)', 'how do I file through the portal'], ['Case Center upload', 'how do I upload to case center'], ['Completing a Confirmation', 'how do I confirm a motion'], ['Compare all regions', 'compare regions'], ['All courthouses', 'list all courthouses']].map(([l, q]) => `<button data-q="${esc(q)}">${esc(l)}</button>`).join('');
+document.getElementById('quick').innerHTML = [['Deadline calculator', 'deadline calculator'], ['Emailing the court (format)', 'email the court subject line'], ['Presumptive modes (virtual/in person)', 'mode of appearance'], ['Transfers between counties', 'transfer'], ['Class actions', 'class action'], ['Commercial List', 'commercial list'], ['Where to issue a claim', 'where do I issue a statement of claim'], ['Acronyms & shorthand', 'acronyms'], ['Rules timelines', 'rules timelines'], ['File naming protocol', 'file naming protocol'], ['How to file (portals)', 'how do I file through the portal'], ['Case Center upload', 'how do I upload to case center'], ['Completing a Confirmation', 'how do I confirm a motion'], ['Compare all regions', 'compare regions'], ['All courthouses', 'list all courthouses']].map(([l, q]) => `<button data-q="${esc(q)}">${esc(l)}</button>`).join('');
 document.getElementById('quick').onclick = e => { const b = e.target.closest('[data-q]'); if (b) { ask(b.dataset.q); closeSide(); } };
 const NAV = [['general', 'Part I — General'], ['provincial', 'Province-Wide Rules'], ...REGION_ORDER.map(r => [r, REGIONS[r].name]), ['comparison', 'Part III — Comparison']];
 document.getElementById('nav').innerHTML = NAV.map(([k, n]) => `<div class="nav-region"><button data-toggle>${esc(n)}<span class="caret">▶</span></button><div class="nav-secs">${SECS[k].filter(s => s.blocks.length).map(s => `<button data-sec="${k}:${s.idx}">${esc(stripRegionPrefix(s.title).replace(/^Chapter \d+ — .*/, 'At a glance'))}</button>`).join('')}</div></div>`).join('');
